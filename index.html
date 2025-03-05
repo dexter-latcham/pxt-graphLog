@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin: 20px;
+        }
+        #connect {
+            background-color: red;
+            color: white;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-bottom: 20px;
+        }
+        #chartContainer {
+            width: 100vw;
+            height: 80vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        canvas {
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+</head>
+<body>
+    <h1>Microbit Data Graphing</h1>
+    <button id="connect">Connect Device</button>
+    <div id="chartContainer">
+        <canvas id="dataChart" style="display: none;"></canvas>
+    </div>
+    
+    <script>
+        let port;
+        let reader;
+        let writer;
+        let printSerialIn = false;
+        let storedHeaders = [];
+        let storedData = [];
+        let lastRequestTime = 0;
+        let headersUpdated = false;
+        let chart;
+        let graphType = "";
+        let drawnUpToRow = 0;
+        const ctx = document.getElementById("dataChart").getContext("2d");
+        
+        function updateButtonState(isConnected) {
+            const connectButton = document.getElementById("connect");
+            if (isConnected) {
+                connectButton.textContent = "Connected";
+                connectButton.style.backgroundColor = "green";
+            } else {
+                connectButton.textContent = "Connect Device";
+                connectButton.style.backgroundColor = "red";
+            }
+        }
+
+        async function sendSerialCommand(command) {
+            const currentTime = Date.now();
+            if (currentTime - lastRequestTime < 500) return;
+            lastRequestTime = currentTime;
+            if (!port || !port.writable) return;
+            try {
+                if (!writer) {
+                    writer = port.writable.getWriter();
+                }
+                await writer.write(new TextEncoder().encode(command));
+            } catch (err) {
+                console.error("Error sending request:", err);
+            } finally {
+                if (writer) {
+                    writer.releaseLock();
+                    writer = null;
+                }
+            }
+        }
+
+
+        async function requestGraphType(){
+            await sendSerialCommand("getType\n")
+        };
+
+        async function requestHeaders() {
+            await sendSerialCommand("getCols\n");
+        }
+
+        function processHeader(headerString) {
+            const splitString = headerString.split(",");
+            if (splitString.length <= storedHeaders.length) return;
+            
+            for (let i = 0; i < storedHeaders.length; i++) {
+                if (splitString[i] !== storedHeaders[i]) {
+                    console.error("Malformed header string.");
+                    return;
+                }
+            }
+            
+            splitString.forEach(name => {
+                if (!storedHeaders.includes(name)) {
+                    storedHeaders.push(name);
+                    headersUpdated = true;
+                }
+            });
+            if(headersUpdated){
+                storedData.forEach(row=>{
+                    while(row.length < storedHeaders.length){
+                        row.push(NaN);
+                    }
+                })
+            }
+        }
+
+        function processData(dataString) {
+            const splitString = dataString.split(",");
+            if (storedHeaders.length === 0) {
+                requestHeaders();
+                return;
+            }
+            if (splitString.length !== storedHeaders.length) {
+                console.error("Data mismatch with headers.");
+                requestHeaders();
+                return;
+            }
+            let newRow = [];
+            for(const elem of splitString){
+                newRow.push(parseFloat(elem));
+            }
+            storedData.push(newRow);
+        }
+
+
+        function createSumChart(){
+            chart = new Chart(ctx, {
+                type: graphType,
+                data: {
+                    labels: storedHeaders,
+                    datasets: [{
+                        label: "Data",
+                        data: new Array(storedHeaders.length).fill(0),
+                        backgroundColor: ["red", "blue", "green", "yellow", "purple", "orange"]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            display: graphType !== "bar" // Hide legend for bar charts
+                        }
+                    }
+                }
+            });
+        }
+
+        function createLineChart(){
+            drawnUpToRow = storedData.length;
+            let tmpDatasets = storedHeaders.slice(1).map((header,index) => ({
+                label:header,
+                data: storedData.slice(0,drawnUpToRow).map(row=>row[index+1]),
+                borderColor: `hsl(${index * 60}, 100%, 50%)`,
+                fill: false
+            }));
+            chart = new Chart(ctx, {
+                type: "line",
+                data: {
+                    labels: storedData.slice(0,drawnUpToRow).map(row=>row[0]),
+                    datasets: tmpDatasets,
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { display: true }
+                    },
+                    scales: {
+                            x: { 
+                                title: { 
+                                    display: true,
+                                    text: storedHeaders[0],
+                                    font: { size: 18 }
+                                },
+                                ticks: {
+                                    maxTicksLimit: 15 //max labels on x axis
+                                }
+                            }
+                        
+                    }
+                }
+            });
+        }
+        function createChart(){
+            if(graphType == ""){
+                requestGraphType();
+                return;
+            }
+            const chartCanvas = document.getElementById("dataChart")
+            chartCanvas.style.display = "block";
+            const ctx = chartCanvas.getContext("2d");
+            if(chart){
+                chart.destroy();
+            }
+            if(graphType=="bar"){
+                createSumChart();
+            }else if(graphType=="pie"){
+                createSumChart();
+            }else if(graphType=="line"){
+                createLineChart();
+            }
+
+        }
+
+        function updateLineChart(){
+            if (drawnUpToRow == storedData.length){
+                return;
+            }
+            let newDrawUpTo = storedData.length;
+            for(let i=drawnUpToRow;i<newDrawUpTo;i++){
+                chart.data.labels.push(storedData[i][0]);
+                chart.data.datasets.forEach((dataset, index) => {
+                    dataset.data.push(storedData[i][index + 1]);
+                });
+            }
+            drawnUpToRow = newDrawUpTo;
+        }
+
+        function updateSumChart(){
+            let columnSums = Array(storedHeaders.length).fill(0);
+            storedData.forEach(row => {
+                row.forEach((value, index) => {
+                    if (! isNaN(value)) {
+                        columnSums[index] += value;
+                    }
+                });
+            });
+            chart.data.labels = storedHeaders;
+            chart.data.datasets[0].data = columnSums;
+        }
+
+        function updateChart() {
+            if (storedData.length === 0){
+                return;
+            }
+
+            if (!chart || chart.config.type !== graphType) {
+                createChart();
+                return;
+            }
+            if(graphType == "line"){
+                updateLineChart();
+            }else{
+                updateSumChart();
+            }
+            chart.update(); // Apply updates without animation
+        }
+
+        setInterval(updateChart, 1000);
+
+        function processGraphType(dataString){
+            if(graphType != dataString){
+                graphType = dataString;
+                console.log("switching to "+dataString);
+                createChart();
+            }
+        }
+        function onReceive(data) {
+            if (!data) return;
+            if(printSerialIn){
+                console.log(data);
+            }
+            if (data.startsWith("H:") && data.endsWith(":H")) {
+                processHeader(data.slice(2, -2));
+            } else if (data.startsWith("D:") && data.endsWith(":D")) {
+                processData(data.slice(2, -2));
+            } else if (data.startsWith("T:") && data.endsWith(":T")) {
+                processGraphType(data.slice(2, -2));
+            }
+        }
+
+        async function serialReader() {
+            try {
+                port = await navigator.serial.requestPort();
+                await port.open({ baudRate: 115200 });
+                updateButtonState(true);
+                reader = port.readable.getReader();
+                let buffer = "";
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    const str = new TextDecoder().decode(value);
+                    buffer += str;
+                    let lines = buffer.split("\n");
+                    buffer = lines.pop();
+                    lines.forEach(line => onReceive(line.trim()));
+                }
+                reader.releaseLock();
+            } catch (err) {
+                console.error("Error:", err);
+                updateButtonState(false);
+            }
+        }
+
+        document.getElementById("connect").addEventListener("click", serialReader);
+    </script>
+</body>
+</html>
