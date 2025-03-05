@@ -6,6 +6,7 @@ datalogger.mirrorToSerial(true)
 
 function linePlotTest(){
     graphlog.setGraphType(graphOptions.LINE)
+    graphlog.setTitle("A graph plotting data")
     datalogger.includeTimestamp(FlashLogTimeStampFormat.Milliseconds)
     let noise = 0;
     let currentVal = Math.random() * 20
@@ -22,8 +23,8 @@ function linePlotTest(){
         let timeStamp = (control.millis() / 1000000);
         let sinVal = Math.sin(i) * 3;
         datalogger.log(
-            datalogger.createCV("value", currentVal),
-            datalogger.createCV("sin", sinVal)
+            datalogger.createCV("random trend", currentVal),
+            datalogger.createCV("sin wave", sinVal)
         )
         basic.pause(200);
         i+=1;
@@ -36,7 +37,7 @@ function barPlotTest(){
     let i=0;
     while(true){
         datalogger.log(
-            datalogger.createCV("value", i)
+            datalogger.createCV("item", i)
         )
         basic.pause(200);
         i+=1;

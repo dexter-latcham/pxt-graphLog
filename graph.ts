@@ -77,7 +77,6 @@ namespace graphlog {
         chosenGraphType = type;
         sendGraphType();
     }
-
 }
 
     // //datalogger doesn't have a "get headers" so this is a hacky workaround
