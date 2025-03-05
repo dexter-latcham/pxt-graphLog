@@ -1,100 +1,122 @@
-enum graphType {
-    NONE =0,
-    BAR = 1,
-    PIE = 2
+enum graphOptions{
+    BAR,
+    PIE,
+    LINE
 }
+namespace graphlog {
+    let chosenGraphType: graphOptions = null;
+    let setGraphTitle: string = "";
+    let headers:string[] = [];
+    let lastHeaderCheckedIndex=0;
 
-namespace displayGraph {
-    export class inputData {
-        public value: number;
-        public colour: number;
-        constructor(
-            public name: string,
-            value: number,
-            colour: number
-        ) {
-            this.value = value;
-            this.colour = colour;
+    //datalogger doesn't have a "get headers" so this is a hacky workaround
+    //check the first row for headers, if this is wrong then binary search to find the next header insertion line
+    function recheckHeaders(){
+        let lastRowCount = datalogger.getNumberOfRows();
+        if(lastRowCount == 0){
+            return;
         }
-    }
-
-    //
-    //% blockId=graphcolorindexpicker block="$index" blockHidden=true
-    //% index.fieldEditor="colornumber"
-    //% index.fieldOptions.valueMode="index"
-    //% index.fieldOptions.colours='["#000000","#ffffff","#ff2121","#ff93c4","#ff8135","#fff609","#249ca3","#78dc52","#003fad","#87f2ff","#8e2ec4","#a4839f","#5c406c","#e5cdc4","#91463d","#000000"]'
-    //% index.fieldOptions.decompileLiterals="true"
-    export function __colorIndexPicker(index: number) {
-        return index;
-    }
-
-
-    //% block="name $name value $value colour $c=graphcolorindexpicker"
-    //% value.shadow=math_number
-    //% blockId=graphCreateInput
-    //% c.defl=8
-    //% weight=80
-    export function createIV(name: string, value: number, c: number): inputData {
-        return new inputData(name, value, c);
-    }
-
-    //% block="plot bar chart for array $providedData"
-    //% blockId=graphBarChartArray
-    //% providedData.shadow=lists_create_with
-    //% providedData.defl=graphCreateInput
-    //% weight=100
-    export function barChart(providedData: inputData[]) {
-    }
-
-    //% block="plot pie chart for array $providedData"
-    //% blockId=graphPieChartArray
-    //% providedData.shadow=lists_create_with
-    //% providedData.defl=graphCreateInput
-    //% weight=100
-    export function pieChart(providedData: inputData[]) {
-    }
-    
-    //% block="set title $providedTitle"
-    export function setTitle(providedTitle:string):void{
-    }
-    
-    //%block="draw key $keyChoice"
-    //keyChoice.shadow=toggleOnOff
-    //keyChoice.defl=false
-    export function drawKey(keyChoice:boolean):void{
-    }
-
-    //function that retrieved heading from a datalogger file
-    //and then sums each column to find  a total
-    //these totals can then be plotted on a graph
-    //can handle columns being added within the log
-    //introduces a requirment on datalgger, this probably isnt the place for it
-    //%block="sum datalogger contents"
-    export function sumDataLogger():inputData[]{
-        let headers = datalogger.getRows(0, 1);
-        let titles = headers.split(",");
-        let colCount = titles.length;
-
-        let sums: displayGraph.inputData[] = [];
-        for (let i = 1; i < titles.length; i++) {
-            sums.push(new displayGraph.inputData(titles[i], 0, i+1));
+        let lastRow = datalogger.getRows(lastRowCount-1,1);
+        let lastRowElems = lastRow.split(",");
+        let targetElemCount = lastRowElems.length;
+        if(targetElemCount== headers.length){
+            //current headers are correct
+            return;
         }
-        for (let i = 1; i < datalogger.getNumberOfRows(); i++) {
-            let row = datalogger.getRows(i, 1);
-            let values = row.split(",");
-            if(values.length != colCount){
-                for (let j = colCount; j < values.length; j++) {
-                    sums.push(new displayGraph.inputData(values[j], 0, j+1));
-                }
-                colCount = values.length;
-            }else{
-                for (let j = 0; j < values.length-1; j++) {
-                    if(values[j+1]!=""){
-                        sums[j].value +=parseFloat(values[j+1]);
-                    }
-                }
+        for(let i=lastHeaderCheckedIndex;i<lastRowCount;i++){
+            let tmpRow = datalogger.getRows(i,1).split(",");
+            if(tmpRow.length == targetElemCount){
+                // should probably check if tmpRow = current headers 
+                // with some extra entries, if there is no overlap 
+                // then this is likely a malformed string
+                headers = tmpRow;
+                lastHeaderCheckedIndex = i;
+                return;
             }
         }
-        return sums;
     }
+    
+    //% block
+    //% title.defl="My Chart"
+    export function setTitle(title: string) {
+        setGraphTitle = title;
+    }
+
+
+    serial.onDataReceived("H", function () {
+        recheckHeaders();
+        if(headers.length != 0){
+            serial.writeLine("H:" + headers.join() + ":H")
+        }
+    }
+
+    function sendGraphType(){
+        let type = "";
+        if(chosenGraphType == graphOptions.BAR){
+            type = "bar";
+        }else if(chosenGraphType == graphOptions.PIE){
+            type = "pie";
+        }else if(chosenGraphType == graphOptions.LINE){
+            type = "line";
+        }
+        if(type != ""){
+            serial.writeLine("G:"+type+":G")
+        }
+    }
+
+    serial.onDataReceived("G", sendGraphType);
+
+    serial.onDataReceived("T", function () {
+        if(setGraphTitle!=""){
+            serial.writeLine("T:"+setGraphTitle+":T")
+        }
+    }
+
+    //% block="draw $type graph"
+    export function setGraphType(type: graphOptions) {
+        chosenGraphType = type;
+        sendGraphType();
+    }
+
 }
+
+    // //datalogger doesn't have a "get headers" so this is a hacky workaround
+    // //check the first row for headers, if this is wrong then binary search to find the next header insertion line
+    // function recheckHeadersBinarySearch(){
+    //     let lastRowCouunt = datalogger.getNumberOfRows();
+    //     if(lastRowCouunt == 0){
+    //         return;
+    //     }
+    //     let lastRow = datalogger.getRows(lastRowCouunt-1,1);
+    //     let lastRowElems = lastRow.split(",");
+    //     if(lastRowElems.length == headers.length){
+    //         //current headers are correct
+    //         return;
+    //     }
+    //     //at some point between lastChecked and new lengthm, headers have changed
+    //     //do a binary search for the first line with the new element
+    //     if(lastHeaderCheckedIndex == -1){
+    //         let tmpRow = datalogger.getRows(0,1).split(",");
+    //         if(tmpRow.length == lastRowElems.length){
+    //             headers = tmpRow;
+    //             return;
+    //         }
+    //         lastHeaderCheckedIndex=0;
+    //     }
+    //     let l = lastHeaderCheckedIndex;
+    //     let r = lastRowCouunt -1;
+    //     let result = -1;
+    //     while(l <= r){
+    //         let mid = Math.floor((r + l)/2);
+    //         let tmpRow = datalogger.getRows(mid, 1).split(",");
+    //         if(tmpRow.length == lastRowElems.length){
+    //             result = mid;
+    //             r = mid -1;
+    //         }else{
+    //             l = mid+1;
+    //         }
+    //     }
+    //     headers = datalogger.getRows(result,1).split(",");
+    //     lastHeaderCheckedIndex = result;
+    //     return;
+    // }

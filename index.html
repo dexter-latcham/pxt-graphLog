@@ -83,57 +83,16 @@
 
 
         async function requestGraphType(){
-            await sendSerialCommand("getType\n")
+            await sendSerialCommand("G")
         };
 
         async function requestHeaders() {
-            await sendSerialCommand("getCols\n");
+            await sendSerialCommand("H");
         }
 
-        function processHeader(headerString) {
-            const splitString = headerString.split(",");
-            if (splitString.length <= storedHeaders.length) return;
-            
-            for (let i = 0; i < storedHeaders.length; i++) {
-                if (splitString[i] !== storedHeaders[i]) {
-                    console.error("Malformed header string.");
-                    return;
-                }
-            }
-            
-            splitString.forEach(name => {
-                if (!storedHeaders.includes(name)) {
-                    storedHeaders.push(name);
-                    headersUpdated = true;
-                }
-            });
-            if(headersUpdated){
-                storedData.forEach(row=>{
-                    while(row.length < storedHeaders.length){
-                        row.push(NaN);
-                    }
-                })
-            }
+        async function requestTitle() {
+            await sendSerialCommand("T");
         }
-
-        function processData(dataString) {
-            const splitString = dataString.split(",");
-            if (storedHeaders.length === 0) {
-                requestHeaders();
-                return;
-            }
-            if (splitString.length !== storedHeaders.length) {
-                console.error("Data mismatch with headers.");
-                requestHeaders();
-                return;
-            }
-            let newRow = [];
-            for(const elem of splitString){
-                newRow.push(parseFloat(elem));
-            }
-            storedData.push(newRow);
-        }
-
 
         function createSumChart(){
             chart = new Chart(ctx, {
@@ -192,26 +151,6 @@
                 }
             });
         }
-        function createChart(){
-            if(graphType == ""){
-                requestGraphType();
-                return;
-            }
-            const chartCanvas = document.getElementById("dataChart")
-            chartCanvas.style.display = "block";
-            const ctx = chartCanvas.getContext("2d");
-            if(chart){
-                chart.destroy();
-            }
-            if(graphType=="bar"){
-                createSumChart();
-            }else if(graphType=="pie"){
-                createSumChart();
-            }else if(graphType=="line"){
-                createLineChart();
-            }
-
-        }
 
         function updateLineChart(){
             if (drawnUpToRow == storedData.length){
@@ -232,7 +171,7 @@
             storedData.forEach(row => {
                 row.forEach((value, index) => {
                     if (! isNaN(value)) {
-                        columnSums[index] += value;
+            columnSums[index] += value;
                     }
                 });
             });
@@ -240,14 +179,31 @@
             chart.data.datasets[0].data = columnSums;
         }
 
+        function createChart(){
+            if(graphType == ""){
+                return requestGraphType();
+            }
+            const chartCanvas = document.getElementById("dataChart")
+            chartCanvas.style.display = "block";
+            if(chart){
+                chart.destroy();
+            }
+            if(graphType=="bar"){
+                createSumChart();
+            }else if(graphType=="pie"){
+                createSumChart();
+            }else if(graphType=="line"){
+                createLineChart();
+            }
+
+        }
         function updateChart() {
             if (storedData.length === 0){
                 return;
             }
 
             if (!chart || chart.config.type !== graphType) {
-                createChart();
-                return;
+                return createChart();
             }
             if(graphType == "line"){
                 updateLineChart();
@@ -259,13 +215,45 @@
 
         setInterval(updateChart, 1000);
 
-        function processGraphType(dataString){
-            if(graphType != dataString){
-                graphType = dataString;
-                console.log("switching to "+dataString);
-                createChart();
+        function processHeader(headerString) {
+            const splitString = headerString.split(",");
+            if (splitString.length <= storedHeaders.length) return;
+            
+            for (let i = 0; i < storedHeaders.length; i++) {
+                if (splitString[i] !== storedHeaders[i]) {
+                    console.error("Malformed header string.");
+                    return;
+                }
+            }
+            
+            splitString.forEach(name => {
+                if (!storedHeaders.includes(name)) {
+                    storedHeaders.push(name);
+                    headersUpdated = true;
+                }
+            });
+            if(headersUpdated){
+                storedData.forEach(row=>{
+                    while(row.length < storedHeaders.length){
+                        row.push(NaN);
+                    }
+                })
             }
         }
+
+        function processData(dataArray) {
+            if (storedHeaders.length === 0) {
+                requestHeaders();
+                return;
+            }
+            if (dataArray.length !== storedHeaders.length) {
+                console.error("Data mismatch with headers.");
+                requestHeaders();
+                return;
+            }
+            storedData.push(dataArray);
+        }
+
         function onReceive(data) {
             if (!data) return;
             if(printSerialIn){
@@ -273,10 +261,21 @@
             }
             if (data.startsWith("H:") && data.endsWith(":H")) {
                 processHeader(data.slice(2, -2));
-            } else if (data.startsWith("D:") && data.endsWith(":D")) {
-                processData(data.slice(2, -2));
-            } else if (data.startsWith("T:") && data.endsWith(":T")) {
-                processGraphType(data.slice(2, -2));
+            } else if (data.startsWith("G:") && data.endsWith(":G")) {
+                graphType = data.slice(2,-2);
+            }else{
+                let newRow = [];
+                let valid = true;
+                for(const elem of data.split(",")){
+                    let parsed = parseFloat(elem);
+                    if (isNaN(parsed) && elem!==""){
+                        console.log("recieved invalid row");
+                        console.log(data)
+                        return;
+                    }
+                    newRow.push(parsed);
+                }
+                processData(newRow);
             }
         }
 
