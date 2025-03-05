@@ -1,6 +1,5 @@
 
-> Open this page at [https://dexter-latcham.github.io/pxt-graphlog/](https://dexter-latcham.github.io/pxt-graphlog/)
-
+> Open this page at [https://dexter-latcham.github.io/pxt-graphLog/](https://dexter-latcham.github.io/pxt-graphLog/)
 ## Use as Extension
 
 This repository can be added as an **extension** in MakeCode.
