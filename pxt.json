@@ -4,11 +4,12 @@
     "dependencies": {
         "core": "*",
         "radio": "*",
-        "microphone": "*"
+        "microphone": "*",
+        "datalogger": "*"
     },
     "files": [
         "main.blocks",
-        "main.ts",
+        "graph.ts",
         "README.md"
     ],
     "testFiles": [
