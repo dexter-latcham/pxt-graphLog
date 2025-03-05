@@ -42,14 +42,6 @@ namespace graphlog {
         setGraphTitle = title;
     }
 
-
-    serial.onDataReceived("H", function () {
-        recheckHeaders();
-        if(headers.length != 0){
-            serial.writeLine("H:" + headers.join() + ":H")
-        }
-    }
-
     function sendGraphType(){
         let type = "";
         if(chosenGraphType == graphOptions.BAR){
@@ -64,13 +56,21 @@ namespace graphlog {
         }
     }
 
-    serial.onDataReceived("G", sendGraphType);
-
-    serial.onDataReceived("T", function () {
-        if(setGraphTitle!=""){
-            serial.writeLine("T:"+setGraphTitle+":T")
+    serial.onDataReceived(serial.delimiters(Delimiters.NewLine), function () {
+        let input = serial.readString()
+        if(input=="H\n"){
+            recheckHeaders();
+            if(headers.length != 0){
+                serial.writeLine("H:" + headers.join() + ":H");
+            }
+        }else if(input == "G\n"){
+            sendGraphType();
+        }else if(input == "T\n"){
+            if(setGraphTitle!=""){
+                serial.writeLine("T:"+setGraphTitle+":T")
+            }
         }
-    }
+    });
 
     //% block="draw $type graph"
     export function setGraphType(type: graphOptions) {

@@ -44,8 +44,8 @@
         let storedHeaders = [];
         let storedData = [];
         let lastRequestTime = 0;
-        let headersUpdated = false;
         let chart;
+        let graphTitle = "";
         let graphType = "";
         let drawnUpToRow = 0;
         const ctx = document.getElementById("dataChart").getContext("2d");
@@ -83,111 +83,132 @@
 
 
         async function requestGraphType(){
-            await sendSerialCommand("G")
+            await sendSerialCommand("G\n")
         };
 
         async function requestHeaders() {
-            await sendSerialCommand("H");
+            await sendSerialCommand("H\n");
         }
 
         async function requestTitle() {
-            await sendSerialCommand("T");
+            await sendSerialCommand("T\n");
         }
 
-        function createSumChart(){
+        function drawNewChart(type,xLables,dataSets,tmpScales={}){
+            if(chart){
+                chart.destroy();
+            }
             chart = new Chart(ctx, {
-                type: graphType,
+                type: type,
                 data: {
-                    labels: storedHeaders,
-                    datasets: [{
-                        label: "Data",
-                        data: new Array(storedHeaders.length).fill(0),
-                        backgroundColor: ["red", "blue", "green", "yellow", "purple", "orange"]
-                    }]
+                    labels: xLables,
+                    datasets: dataSets,
                 },
                 options: {
                     responsive: true,
+                    scales : tmpScales,
                     plugins: {
-                        legend: {
-                            display: graphType !== "bar" // Hide legend for bar charts
+                        title: {
+                            display: true,
+                            text: graphTitle,
+                            font: {
+                                size:20
+                            }
+                        },
+                        legend: {  // Increase legend font size
+                            labels: {
+                                font: {
+                                    size: 16 // Adjust the size as needed
+                                }
+                            }
                         }
                     }
-                }
+                },
             });
+        }
+
+        function updateChartTitle(newTitle) {
+            graphTitle = newTitle;
+            if (chart) {
+                chart.options.plugins.title.text = newTitle;
+                chart.update();
+            }
         }
 
         function createLineChart(){
             drawnUpToRow = storedData.length;
+            let tmpScales = { x: { 
+                        title: { 
+                            display: true,
+                            text: storedHeaders[0],
+                            font: { size: 18 }
+                        },
+                        ticks: { maxTicksLimit: 15 }
+            }};
             let tmpDatasets = storedHeaders.slice(1).map((header,index) => ({
                 label:header,
                 data: storedData.slice(0,drawnUpToRow).map(row=>row[index+1]),
                 borderColor: `hsl(${index * 60}, 100%, 50%)`,
                 fill: false
             }));
-            chart = new Chart(ctx, {
-                type: "line",
-                data: {
-                    labels: storedData.slice(0,drawnUpToRow).map(row=>row[0]),
-                    datasets: tmpDatasets,
-                },
-                options: {
-                    responsive: true,
-                    plugins: {
-                        legend: { display: true }
-                    },
-                    scales: {
-                            x: { 
-                                title: { 
-                                    display: true,
-                                    text: storedHeaders[0],
-                                    font: { size: 18 }
-                                },
-                                ticks: {
-                                    maxTicksLimit: 15 //max labels on x axis
-                                }
-                            }
-                        
-                    }
-                }
-            });
+            let tmpXScales = storedData.slice(0,drawnUpToRow).map(row=>row[0]);
+            drawNewChart("line",tmpXScales,tmpDatasets,tmpScales);
+        }
+        function createSumChart(){
+            let dataToPlot = [{
+                label: "Data",
+                data: new Array(storedHeaders.length).fill(0),
+                backgroundColor: ["red", "blue", "green", "yellow", "purple", "orange"]
+            }]
+            drawNewChart(graphType,storedHeaders,dataToPlot)
         }
 
-        function updateLineChart(){
+        function updateLine(newData){
+            for(row of newData){
+                chart.data.labels.push(row[0]);
+                chart.data.datasets.forEach((dataset, index) => {
+                    dataset.data.push(row[index + 1]);
+                });
+            }
+        }
+
+        function updateSum(newData){
+            if(chart.data.labels.length != storedHeaders.length){
+                for(let i=chart.data.labels.length;i<storedHeaders.length;i++){
+                    chart.data.datasets[0].data.push(0)
+                }
+                chart.data.labels = storedHeaders;
+            }
+
+            for(row of newData){
+                for(let j=0;j< row.length;j++){
+                    let elem = row[j];
+                    if(! isNaN(elem)){
+                        chart.data.datasets[0].data[j]+=elem;
+                    }
+                }
+            }
+        }
+
+        function updateData(){
             if (drawnUpToRow == storedData.length){
                 return;
             }
             let newDrawUpTo = storedData.length;
-            for(let i=drawnUpToRow;i<newDrawUpTo;i++){
-                chart.data.labels.push(storedData[i][0]);
-                chart.data.datasets.forEach((dataset, index) => {
-                    dataset.data.push(storedData[i][index + 1]);
-                });
+            let newData = storedData.slice(drawnUpToRow,newDrawUpTo);
+            if(graphType == "line"){
+                updateLine(newData);
+            }else{
+                updateSum(newData);
             }
             drawnUpToRow = newDrawUpTo;
-        }
-
-        function updateSumChart(){
-            let columnSums = Array(storedHeaders.length).fill(0);
-            storedData.forEach(row => {
-                row.forEach((value, index) => {
-                    if (! isNaN(value)) {
-            columnSums[index] += value;
-                    }
-                });
-            });
-            chart.data.labels = storedHeaders;
-            chart.data.datasets[0].data = columnSums;
+            chart.update(); 
         }
 
         function createChart(){
-            if(graphType == ""){
-                return requestGraphType();
-            }
             const chartCanvas = document.getElementById("dataChart")
             chartCanvas.style.display = "block";
-            if(chart){
-                chart.destroy();
-            }
+
             if(graphType=="bar"){
                 createSumChart();
             }else if(graphType=="pie"){
@@ -197,7 +218,15 @@
             }
 
         }
-        function updateChart() {
+
+
+        function update() {
+            if(graphType == ""){
+                return requestGraphType();
+            }
+            if(storedHeaders.length == 0){
+                return requestHeaders();
+            }
             if (storedData.length === 0){
                 return;
             }
@@ -205,15 +234,10 @@
             if (!chart || chart.config.type !== graphType) {
                 return createChart();
             }
-            if(graphType == "line"){
-                updateLineChart();
-            }else{
-                updateSumChart();
-            }
-            chart.update(); // Apply updates without animation
+            updateData();
         }
 
-        setInterval(updateChart, 1000);
+        setInterval(update, 1000);
 
         function processHeader(headerString) {
             const splitString = headerString.split(",");
@@ -226,6 +250,7 @@
                 }
             }
             
+            let headersUpdated = false;
             splitString.forEach(name => {
                 if (!storedHeaders.includes(name)) {
                     storedHeaders.push(name);
@@ -242,10 +267,6 @@
         }
 
         function processData(dataArray) {
-            if (storedHeaders.length === 0) {
-                requestHeaders();
-                return;
-            }
             if (dataArray.length !== storedHeaders.length) {
                 console.error("Data mismatch with headers.");
                 requestHeaders();
@@ -261,6 +282,8 @@
             }
             if (data.startsWith("H:") && data.endsWith(":H")) {
                 processHeader(data.slice(2, -2));
+            }else if (data.startsWith("T:") && data.endsWith(":T")) {
+                updateChartTitle(data.slice(2,-2));
             } else if (data.startsWith("G:") && data.endsWith(":G")) {
                 graphType = data.slice(2,-2);
             }else{
