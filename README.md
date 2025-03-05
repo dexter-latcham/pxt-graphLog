@@ -1,5 +1,5 @@
 
-> Open this page at [https://dexter-latcham.github.io/pxt-graphlog/](https://dexter-latcham.github.io/graphlog/)
+> Open this page at [https://dexter-latcham.github.io/pxt-graphlog/](https://dexter-latcham.github.io/pxt-graphlog/)
 
 ## Use as Extension
 
