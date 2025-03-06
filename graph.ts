@@ -3,11 +3,117 @@ enum graphOptions{
     PIE,
     LINE
 }
+
 namespace graphlog {
     let chosenGraphType: graphOptions = null;
     let setGraphTitle: string = "";
-    let headers:string[] = [];
+    let headers:string[] = ["foo","bar"];
     let lastHeaderCheckedIndex=0;
+    let dataLoggerIterator = 0;
+    let connected = false;
+    let logLiveDatalogger = false;
+
+    datalogger.mirrorToSerial(false)
+
+
+    //% block="draw $type graph"
+    export function setGraphType(type: graphOptions) {
+        chosenGraphType = type;
+        sendGraphType();
+    }
+    
+    //% block
+    //% title.defl="My Chart"
+    export function setTitle(title: string) {
+        setGraphTitle = title;
+    }
+    
+    export function formatPrintString(data: datalogger.ColumnValue[]):string{
+        for(let elem of data){
+            if(headers.indexOf(elem.column)===-1){
+                headers.push(elem.column);
+            }
+        }
+        // Create an object to store column values
+        let dataMap: { [key: string]: string } = {};
+        
+        // Populate the object with data values
+        for (let i = 0; i < data.length; i++) {
+            dataMap[data[i].column] = data[i].value;
+        }
+        
+        // Build the CSV string based on providedHeaders
+        let result: string[] = [];
+        for (let i = 0; i < headers.length; i++) {
+            result.push(dataMap[headers[i]] || "");
+        }
+        return result.join(",");
+    }
+
+    //% block="add data to chart $providedData"
+    //% blockId=graphAddData
+    //% providedData.shadow=lists_create_with
+    //% providedData.defl=dataloggercreatecolumnvalue
+    export function addData(providedData:datalogger.ColumnValue[] | (()=>string)){
+        if(typeof providedData !== "function"){
+            serial.writeLine(formatPrintString(providedData));
+            return;
+        }
+        //tread providedData as a generator
+        let foo = providedData();
+        while(foo != null){
+            serial.writeLine(foo);
+            foo = providedData();
+        }
+
+    }
+    
+    export function getDataloggerContentsFunction():string{
+        if(dataLoggerIterator == datalogger.getNumberOfRows()){
+            return null;
+        }
+        dataLoggerIterator+=1;
+        return datalogger.getRows(dataLoggerIterator-1,1);
+    }
+    
+    //%block="get datalogger contents"
+    export function getDataloggerContents(): () => string{
+        return getDataloggerContentsFunction;
+    }
+
+
+    //% block="Updata with live logging $on"
+    //% blockId=graphUpdateLive
+    //% on.shadow=toggleOnOff
+    //% on.defl=false
+    export function updateLive(on: boolean): void {
+        flashlog.setSerialMirroring(on);
+    }
+
+    function sendGraphType(){
+        let type = "";
+        if(chosenGraphType == graphOptions.BAR){
+            type = "bar";
+        }else if(chosenGraphType == graphOptions.PIE){
+            type = "pie";
+        }else if(chosenGraphType == graphOptions.LINE){
+            type = "line";
+        }
+        if(type != ""){
+            serial.writeLine("G:"+type+":G")
+        }
+    }
+
+    function startConnection(){
+
+    }
+    serial.onDataReceived(serial.delimiters(Delimiters.NewLine), function () {
+        let input = serial.readString()
+        if(input == "C\n"){
+            connected = true;
+            startConnection();
+        }
+    });
 
     //datalogger doesn't have a "get headers" so this is a hacky workaround
     //check the first row for headers, if this is wrong then binary search to find the next header insertion line
@@ -35,87 +141,5 @@ namespace graphlog {
             }
         }
     }
-    
-    //% block
-    //% title.defl="My Chart"
-    export function setTitle(title: string) {
-        setGraphTitle = title;
-    }
-
-    function sendGraphType(){
-        let type = "";
-        if(chosenGraphType == graphOptions.BAR){
-            type = "bar";
-        }else if(chosenGraphType == graphOptions.PIE){
-            type = "pie";
-        }else if(chosenGraphType == graphOptions.LINE){
-            type = "line";
-        }
-        if(type != ""){
-            serial.writeLine("G:"+type+":G")
-        }
-    }
-
-    serial.onDataReceived(serial.delimiters(Delimiters.NewLine), function () {
-        let input = serial.readString()
-        if(input=="H\n"){
-            recheckHeaders();
-            if(headers.length != 0){
-                serial.writeLine("H:" + headers.join() + ":H");
-            }
-        }else if(input == "G\n"){
-            sendGraphType();
-        }else if(input == "T\n"){
-            if(setGraphTitle!=""){
-                serial.writeLine("T:"+setGraphTitle+":T")
-            }
-        }
-    });
-
-    //% block="draw $type graph"
-    export function setGraphType(type: graphOptions) {
-        chosenGraphType = type;
-        sendGraphType();
-    }
 }
 
-    // //datalogger doesn't have a "get headers" so this is a hacky workaround
-    // //check the first row for headers, if this is wrong then binary search to find the next header insertion line
-    // function recheckHeadersBinarySearch(){
-    //     let lastRowCouunt = datalogger.getNumberOfRows();
-    //     if(lastRowCouunt == 0){
-    //         return;
-    //     }
-    //     let lastRow = datalogger.getRows(lastRowCouunt-1,1);
-    //     let lastRowElems = lastRow.split(",");
-    //     if(lastRowElems.length == headers.length){
-    //         //current headers are correct
-    //         return;
-    //     }
-    //     //at some point between lastChecked and new lengthm, headers have changed
-    //     //do a binary search for the first line with the new element
-    //     if(lastHeaderCheckedIndex == -1){
-    //         let tmpRow = datalogger.getRows(0,1).split(",");
-    //         if(tmpRow.length == lastRowElems.length){
-    //             headers = tmpRow;
-    //             return;
-    //         }
-    //         lastHeaderCheckedIndex=0;
-    //     }
-    //     let l = lastHeaderCheckedIndex;
-    //     let r = lastRowCouunt -1;
-    //     let result = -1;
-    //     while(l <= r){
-    //         let mid = Math.floor((r + l)/2);
-    //         let tmpRow = datalogger.getRows(mid, 1).split(",");
-    //         if(tmpRow.length == lastRowElems.length){
-    //             result = mid;
-    //             r = mid -1;
-    //         }else{
-    //             l = mid+1;
-    //         }
-    //     }
-    //     headers = datalogger.getRows(result,1).split(",");
-    //     lastHeaderCheckedIndex = result;
-    //     return;
-    // }
