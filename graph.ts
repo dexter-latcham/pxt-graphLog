@@ -11,27 +11,7 @@ namespace graphlog {
     let connected = false;
     let logLiveDatalogger = false;
     let doSendDataloggerContents = false;
-    let headersRequested = false;
-    let graphTypeRequested = false;
-    let graphTitleRequested = false;
-    let okayToSendData = false;
-    loops.everyInterval(500, function () {
-        if(!connected){
-            return;
-        }
-        if(headersRequested){
-            sendGraphHeaders();
-            headersRequested=false;
-        }
-        if(graphTypeRequested){
-            sendGraphType();
-            graphTypeRequested=false;
-        }
-        if(graphTitleRequested){
-            sendGraphTitle();
-            graphTitleRequested=false;
-        }
-    })
+
 
     datalogger.mirrorToSerial(false);
     
@@ -64,21 +44,52 @@ namespace graphlog {
     export function addData(providedData:datalogger.ColumnValue[] | (()=>void)){
         if(typeof providedData !== "function"){
             serial.writeLine(formatPrintString(providedData));
+            basic.pause(10);
             return;
         }
         //treat providedData as a function provided to generate data
         providedData();
     }
     
+    function sendGraphType(){
+        if(graphType ==""){
+            return;
+        }
+        if(connected == true){
+            serial.writeLine("G:"+graphType+":G")
+        }
+    }
+
+    function sendGraphTitle(){
+        if(graphTitle != ""){
+            if(connected == true){
+                serial.writeLine("T:"+graphTitle+":T");
+            }
+        }
+    }
+
+    function sendGraphHeaders(){
+        if(headers.length == 0){
+            recheckHeaders();
+            if(headers.length == 0){
+                return;
+            }
+        }
+        if(connected == true){
+            serial.writeLine("H:"+headers.join(",")+":H");
+        }
+    }
+
     export function sendDataloggerContents():void{
-        if(!connected || !okayToSendData){
-            doSendDataloggerContents = true;
+        if(!connected){
+            doSendDataloggerContents=true;
             return;
         }
         let dataLoggerSize = datalogger.getNumberOfRows();
         for(let i=0;i<dataLoggerSize;i++){
             let line = datalogger.getRows(i,1);
             serial.writeLine(line);
+            basic.pause(20);
         }
     }
     
@@ -97,14 +108,14 @@ namespace graphlog {
         }else if(type == graphOptions.LINE){
             graphType = "line"
         }
-        graphTypeRequested=true;
+        sendGraphType();
     }
     
     //% block
     //% title.defl="My Chart"
     export function setTitle(title: string) {
         graphTitle = title;
-        graphTitleRequested=true;
+        sendGraphTitle();
     }
 
     //% block="Updata with live logging $on"
@@ -118,42 +129,12 @@ namespace graphlog {
         logLiveDatalogger = on;
     }
 
-    function sendGraphType(){
-        if(graphType ==""){
-            return;
-        }
-        serial.writeLine("G:"+graphType+":G")
-    }
 
-    function sendGraphTitle(){
-        if(graphTitle != ""){
-            serial.writeLine("T:"+graphTitle+":T");
-        }
-    }
-
-    function sendGraphHeaders(){
-        if(headers.length == 0){
-            recheckHeaders();
-            if(headers.length == 0){
-                return;
-            }
-        }
-        serial.writeLine("H:"+headers.join(",")+":H");
-    }
-
-    function startSendingData(){
-        if(doSendDataloggerContents){
-            sendDataloggerContents();
-        }else if(logLiveDatalogger){
-            datalogger.mirrorToSerial(true);
-        }
-    }
     function startConnection(){
         if(connected){
             //need to restart connection
             datalogger.mirrorToSerial(false);
         }
-        okayToSendData=false;
         connected = true;
         sendGraphTitle();
         basic.pause(200);
@@ -161,21 +142,23 @@ namespace graphlog {
         basic.pause(200);
         recheckHeaders();
         sendGraphHeaders();
+        if(doSendDataloggerContents){
+            sendDataloggerContents();
+        }else if(logLiveDatalogger){
+            datalogger.mirrorToSerial(true);
+        }
     }
 
     serial.onDataReceived(serial.delimiters(Delimiters.NewLine), function () {
         let input = serial.readString()
         if(input == "C\n"){
             startConnection();
-        }else if(input == "O\n"){//okay to start sending data
-            okayToSendData=true;
-            startSendingData();
         }else if(input == "H\n"){
-            headersRequested=true;
+            sendGraphHeaders();
         }else if(input == "G\n"){
-            graphTypeRequested=true;
+            sendGraphType();
         }else if(input == "T\n"){
-            graphTitleRequested=true;
+            sendGraphTitle();
         }
     });
 
