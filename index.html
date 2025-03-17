@@ -3,6 +3,7 @@
 <head>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation"></script>
+    <script src="graphHandler.js"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -39,24 +40,16 @@
     
     <script>
 
-        let port;
-        let reader;
-        let writer;
-        let debugging = true;
+        let port,reader,writer;
+        let tmpHeaders = [];
         let storedHeaders = [];
         let storedData = [];
+        let debugging = true;
         let lastRequestTime = 0;
-        let chart;
-        let graphTitle = "";
-        let graphType = "";
-        let drawnUpToRow = 0;
         let connected = false;
-        let lastDatapointTimestamp=0;
-        let timestampOffset =0;
-        var setuploop;
-        var updateDataLoop;
+        let updateLoop;
 
-        const ctx = document.getElementById("dataChart").getContext("2d");
+
         
         function updateButtonState(isConnected) {
             const connectButton = document.getElementById("connect");
@@ -91,248 +84,8 @@
                 }
             }
         }
-        function drawNewChart(dataSets,xLables=[],scales={}){
-            chart = new Chart(ctx, {
-                type: graphType,
-                data: {
-                    labels: xLables,
-                    datasets: dataSets,
-                },
-                options: {
-                    responsive: true,
-                    scales : scales,
-                    plugins: {
-                        title: {
-                            display: true,
-                            text: graphTitle,
-                            font: {
-                                size:20
-                            }
-                        },
-                        legend: {  // Increase legend font size
-                            labels: {
-                                font: {
-                                    size: 16 // Adjust the size as needed
-                                }
-                            }
-                        }
-                    }
-                },
-            });
-        }
-
-        function drawLineChart(){
-            let xAxisTitle = "";
-            if(storedHeaders.length!=0){
-                xAxisTitle = storedHeaders[0];
-            }
-            let tmpScales = {x: { 
-                        type:"linear",
-                        title: { 
-                            display: true,
-                            text: xAxisTitle,
-                            font: { size: 18 }
-                        },
-            }};
-            let tmpDatasets=[];
-            if(storedHeaders.length!=0){
-                tmpDatasets = storedHeaders.slice(1).map((header,index) => ({
-                    label:header,
-                    data:[],
-                    borderColor: `hsl(${index * 60}, 100%, 50%)`,
-                    fill: false
-                }));
-            }
-            drawNewChart(tmpDatasets,[],tmpScales);
-        }
-
-        function drawSumChart(){
-            let labels = storedHeaders;
-
-            if(storedHeaders.length !=0){
-                if(storedHeaders[0].startsWith("Time")){
-                    labels = labels.slice(1);
-                }
-            }
-            let dataToPlot = [{
-                    label: "",
-                    data: new Array(labels.length).fill(0),
-                    backgroundColor: ["red", "blue", "green", "yellow", "purple", "orange"]
-                }];
-
-            drawNewChart(dataToPlot,labels,{})
-        }
-
-        function updateSumChartHeaders(){
-            let labels = storedHeaders;
-            if(storedHeaders[0].startsWith("Time")){
-                labels = storedHeaders.slice(1);
-            }
-            let currentColumnCount = chart.data.labels.length;
-            for(let i=currentColumnCount;i<labels.length;i++){
-                chart.data.datasets[0].data.push(0);
-            }
-            chart.data.labels = labels;
-        }
-
-        function updateLineChartHeaders(){
-            let currentColumnCount = chart.data.datasets.length;
-            if(currentColumnCount==0){
-                chart.options.scales.x.title.text=storedHeaders[0];
-            }
-
-            for(let i=currentColumnCount;i<storedHeaders.length-1;i++){
-                chart.data.datasets.push({
-                    label:storedHeaders[i+1],
-                    data:[],
-                    borderColor: `hsl(${i * 60}, 100%, 50%)`,
-                    fill: false
-                })
-
-            }
-        }
-
-        function addDividorToLineChart(xPosition){
-            if (!chart.options.plugins.annotation) {
-                chart.options.plugins.annotation = {
-                    annotations: []
-                };
-            }
-
-            // Add a new vertical line annotation with a hover tooltip
-            chart.options.plugins.annotation={annotations:[{
-                type: 'line',
-                scaleID: 'x',
-                mode: 'vertical',
-                value: xPosition,
-                borderColor: 'red',
-                borderWidth: 2,
-                borderDash: [6, 6], // Dashed line (optional)
-                label: {
-                    display: false,
-                    content: `time values restart from 0`,
-                    backgroundColor: "rgba(0,0,0,0.8)", // Dark background
-                    color: "white",
-                    font: {
-                        size: 14
-                    },
-                    padding: 6
-                },
-                enter({ element }, event) {
-                    element.label.options.display = true;
-                    return true; // force update
-                },
-                leave({ element }, event) {
-                    element.label.options.display = false;
-                    return true;
-                }
-                    
-            }]};
-            // chart.update();
-        }
-
-        function updateLineChart(newData){
-            for(row of newData){
-                if(storedHeaders[0].startsWith("Time")){
-                    if(row[0] < lastDatapointTimestamp){
-                        addDividorToLineChart(lastDatapointTimestamp);
-                        timestampOffset = lastDatapointTimestamp-row[0]
-                    }
-                    lastDatapointTimestamp = row[0];
-                    row[0] = row[0]+timestampOffset
-                }
-                let maxI = Math.min(row.length,storedHeaders.length);
-                for(let i=1;i<maxI;i++){
-                    chart.data.datasets[i-1].data.push({y:row[i],x:""+row[0]});
-                }
-            }
-            chart.update();
-        }
-
-        function updateSumChart(newData){
-            let rowOffset =0;
-            if(storedHeaders[0].startsWith("Time")){
-                rowOffset = 1;
-            }
-            for(row of newData){
-                let maxI = Math.min(row.length,storedHeaders.length);
-                for(let i=rowOffset;i<maxI;i++){
-                    let elem = row[i];
-                    if(!isNaN(elem)){
-                        chart.data.datasets[0].data[i-rowOffset]+=elem;
-                    }
-                }
-            }
-        }
-        
 
 
-        function updateChart(){
-            if(!chart){
-                return;
-            }
-            if(drawnUpToRow == storedData.length){
-                return;
-            }
-
-            let newDrawUpTo = storedData.length;
-            let newData = storedData.slice(drawnUpToRow,newDrawUpTo);
-            if(newData[newData.length-1].length > storedHeaders.length){
-                requestGraphHeaders();
-                return;
-            }
-            if(graphType == "line"){
-                updateLineChart(newData);
-            }else if(graphType == "pie" || graphType == "bar"){
-                updateSumChart(newData);
-            }
-            drawnUpToRow = newDrawUpTo;
-            chart.update(); 
-        }
-
-        function drawGraph(){
-            if(chart && chart.config.type == graphType){
-                return;
-            }
-            if(chart){
-                chart.destroy();
-            }
-            const chartCanvas = document.getElementById("dataChart")
-            chartCanvas.style.display = "block";
-            if(graphType == "line"){
-                drawLineChart();
-            }else if(graphType == "bar" || graphType == "pie"){
-                drawSumChart();
-            }
-            clearInterval(updateDataLoop);
-            updateDataLoop = setInterval(updateChart,1000);
-        }
-
-        function updateGraphHeaders(){
-            if(!chart){
-                return;
-            }
-            if(graphType == "line"){
-                updateLineChartHeaders();
-            }else if(graphType == "bar" || graphType == "pie"){
-                updateSumChartHeaders();
-            }
-        }
-
-        function updateGraphTitle(newTitle){
-            graphTitle = newTitle;
-            if (chart) {
-                chart.options.plugins.title.text = newTitle;
-                chart.update();
-            }
-        }
-
-        function updateGraphType(newType){
-            if(graphType != newType){
-                graphType = newType;
-                drawGraph(newType);
-            }
-        }
 
         function requestGraphHeaders(){
             sendSerialCommand("H\n");
@@ -363,12 +116,25 @@
         }
 
         function processHeader(headerString) {
-            let splitHeaders = headerString.split(",");
-            if(storedHeaders.length==0){
-                storedHeaders = splitHeaders;
-                updateGraphHeaders();
+            if(tmpHeaders.length < 3){
+                tmpHeaders.push(headerString);
+                if(tmpHeaders.length == 3){
+                    if(tmpHeaders[0] === tmpHeaders[1]){
+                        storedHeaders = tmpHeaders[0].split(",");
+                    }else if(tmpHeaders[0] === tmpHeaders[2]){
+                        storedHeaders = tmpHeaders[0].split(",");
+                    }else if(tmpHeaders[1] === tmpHeaders[2]){
+                        storedHeaders = tmpHeaders[1].split(",");
+                    }else{
+                        tmpHeaders.shift();
+                        return;
+                    }
+                    graph.updateHeaders(storedHeaders);
+                    return;
+                }
                 return;
             }
+            let splitHeaders = headerString.split(",");
             if(splitHeaders.length > storedHeaders.length){
                 for(let i=0;i<storedHeaders.length;i++){
                     if(storedHeaders[i] != splitHeaders[i]){
@@ -378,7 +144,7 @@
                 for(let i=storedHeaders.length;i<splitHeaders.length;i++){
                     storedHeaders.push(splitHeaders[i]);
                 }
-                updateGraphHeaders();
+                graph.updateHeaders(storedHeaders);
             }
         }
 
@@ -392,11 +158,11 @@
                 return;
             }
             if (data.startsWith("T:") && data.endsWith(":T")) {
-                updateGraphTitle(data.slice(2, -2));
+                graph.updateTitle(data.slice(2,-2));
                 return;
             }
             if (data.startsWith("G:") && data.endsWith(":G")) {
-                updateGraphType(data.slice(2, -2));
+                graph.updateType(data.slice(2,-2));
                 return;
             }
             //cound be data, could be new header or could be malformed
@@ -407,10 +173,17 @@
             processHeader(data);
         }
 
-        async function onSerialConnect(){
-            sendSerialCommand("C\n")
-            connected = true;
-
+        function updateGraph(){
+            if(graph.getDrawnTo() == storedData.length){
+                return;
+            }
+            let max = storedData.length;
+            let newData = storedData.slice(graph.getDrawnTo(),max);
+            if(newData[newData.length-1].length > storedHeaders.length){
+                requestGraphHeaders();
+                return;
+            }
+            graph.updateChart(newData);
         }
 
         async function serialReader() {
@@ -418,7 +191,9 @@
                 port = await navigator.serial.requestPort();
                 await port.open({ baudRate: 115200 });
                 updateButtonState(true);
-                onSerialConnect();
+                sendSerialCommand("C\n")
+                connected = true;
+                updateLoop = setInterval(updateGraph,1000);
                 reader = port.readable.getReader();
                 let buffer = "";
                 while (true) {
