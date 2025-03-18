@@ -1,111 +1,27 @@
-class graph{
-    static chart;
-    static graphTitle = "";
-    static graphType = "";
-    static drawnUpToRow = 0;
-    static graphHeaders = [];
-
-    static lastDatapointTimestamp=0;
-    static timestampOffset =0;
-
-
-    static updateGraphHeaders(){
-        if(!graph.chart){
-            return;
-        }
-        if(graph.graphType == "line"){
-            graph.updateLineChartHeaders();
-        }else if(graph.graphType == "bar" || graph.graphType == "pie"){
-            graph.updateSumChartHeaders();
-        }
-    }
-
-    static updateSumChartHeaders(){
-        let labels = graph.graphHeaders;
-        if(graph.graphHeaders[0].startsWith("Time")){
-            labels = graph.graphHeaders.slice(1);
-        }
-        let currentColumnCount = graph.chart.data.labels.length;
-        for(let i=currentColumnCount;i<labels.length;i++){
-            graph.chart.data.datasets[0].data.push(0);
-        }
-        graph.chart.data.labels = labels;
-    }
-
-    static updateLineChartHeaders(){
-        let currentColumnCount = graph.chart.data.datasets.length;
-        if(currentColumnCount==0){
-            graph.chart.options.scales.x.title.text=graph.graphHeaders[0];
-        }
-
-        for(let i=currentColumnCount;i<graph.graphHeaders.length-1;i++){
-            graph.chart.data.datasets.push({
-                label:graph.graphHeaders[i+1],
-                data:[],
-                borderColor: `hsl(${i * 60}, 100%, 50%)`,
-                fill: false
-            })
-
-        }
+class graphBase{
+    constructor(title="",headers=[],type=""){
+        this.chart;
+        this.title = title;
+        this.type = type;
+        this.headers = headers;
+        this.drawnUpTo=0;
     }
 
 
+    getDrawnTo(){
+        return this.drawnUpTo;
+    }
 
-    static updateTitle(newTitle){
-        if(newTitle == graph.graphTitle){
-            return;
-        }
-        graph.graphTitle = newTitle;
-        if (graph.chart) {
-            graph.chart.options.plugins.title.text = newTitle;
-            graph.chart.update();
+    delete(){
+        if(this.chart){
+            this.chart.destroy();
         }
     }
 
-    static createChart(){
-        if(graph.graphHeaders.length ==0 || graph.graphType == ""){
-            return;
-        }
-        if(graph.chart && graph.chart.config.type == graph.graphType){
-            return;
-        }
-        if(graph.chart){
-            graph.chart.destroy();
-        }
-        document.getElementById("dataChart").style.display="block";
-        if(graph.graphType == "line"){
-            graph.drawLineChart();
-        }else if(graph.graphType == "bar" || graph.graphType == "pie"){
-            graph.drawSumChart();
-        }
-        graph.drawnUpToRow=0;
-    }
-
-    static updateHeaders(newHeaders){
-        graph.graphHeaders = newHeaders;
-        if (! graph.chart) {
-            graph.createChart();
-        }
-    }
-    static updateType(newType){
-        if(newType == graph.graphType){
-            return;
-        }
-        if(newType == "line"){
-
-        }else if(newType == "bar" || newType == "pie"){
-
-        }else{
-            return;
-        }
-        graph.graphType = newType;
-        graph.createChart();
-    }
-
-    static drawNewChart(dataSets,xLables=[],scales={}){
+    drawGraph(dataSets,xLables=[],scales={}){
         let ctx = document.getElementById("dataChart").getContext("2d");
-        graph.chart = new Chart(ctx, {
-            type: graph.graphType,
+        this.chart = new Chart(ctx, {
+            type: this.type,
             data: {
                 labels: xLables,
                 datasets: dataSets,
@@ -116,7 +32,7 @@ class graph{
                 plugins: {
                     title: {
                         display: true,
-                        text: graph.graphTitle,
+                        text: this.title,
                         font: {
                             size:20
                         }
@@ -133,10 +49,105 @@ class graph{
         });
     }
 
-    static drawLineChart(){
+
+    updateHeaders(newHeaders){
+        if(!this.chart){
+            this.headers = newHeaders;
+            return;
+        }
+        this.headers = newHeaders;
+        this.updateHeadersImpl();
+    }
+    updateHeadersImpl(){
+        throw new Error("update headers abstract method called")
+
+    }
+
+    updateTitle(newTitle){
+        if(newTitle == this.title){
+            return;
+        }
+        this.title = newTitle;
+        if(this.chart){
+            this.chart.options.plugins.title.text = newTitle;
+            this.chart.update();
+        }
+
+    }
+    updateChartData(newData){
+        throw new Error("update with new data abstract method called");
+    }
+}
+
+class sumChart extends graphBase{
+    constructor(title="",headers=[],type=""){
+        super(title,headers,type);
+        this.drawSumChart();
+    }
+    drawSumChart(){
+        let labels = this.headers;
+        if(this.headers.length !=0){
+            if(this.headers[0].startsWith("Time")){
+                labels = labels.slice(1);
+            }
+        }
+        let dataToPlot = [{
+                label: "",
+                data: new Array(labels.length).fill(0),
+                backgroundColor: ["red", "blue", "green", "yellow", "purple", "orange"]
+            }];
+
+        this.drawGraph(dataToPlot,labels,{});
+    }
+
+    updateHeadersImpl(){
+        let labels = this.headers;
+        if(this.headers[0].startsWith("Time")){
+            labels = this.headers.slice(1);
+        }
+        let currentColumnCount = this.chart.data.labels.length;
+        for(let i=currentColumnCount;i<labels.length;i++){
+            this.chart.data.datasets[0].data.push(0);
+        }
+        this.chart.data.labels = labels;
+    }
+
+    updateChartData(newData){
+        if(!this.chart){
+            return;
+        }
+
+        let rowOffset =0;
+        if(this.headers[0].startsWith("Time")){
+            rowOffset = 1;
+        }
+        for(let row of newData){
+            let maxI = Math.min(row.length,this.headers.length);
+            for(let i=rowOffset;i<maxI;i++){
+                let elem = row[i];
+                if(!isNaN(elem)){
+                    this.chart.data.datasets[0].data[i-rowOffset]+=elem;
+                }
+            }
+        }
+
+        this.drawnUpTo = this.drawnUpTo+newData.length;
+        this.chart.update();
+    }
+}
+
+class lineChart extends graphBase{
+    constructor(title="",headers=[],type=""){
+        super(title,headers,type);
+        this.lastDatapointTimestamp =0;
+        this.timestampOffset=0;
+        this.drawLineChart();
+    }
+
+    drawLineChart(){
         let xAxisTitle = "";
-        if(graph.graphHeaders.length!=0){
-            xAxisTitle = graph.graphHeaders[0];
+        if(this.headers.length!=0){
+            xAxisTitle = this.headers[0];
         }
         let tmpScales = {x: { 
                     type:"linear",
@@ -147,77 +158,64 @@ class graph{
                     },
         }};
         let tmpDatasets=[];
-        if(graph.graphHeaders.length!=0){
-            tmpDatasets = graph.graphHeaders.slice(1).map((header,index) => ({
+        if(this.headers.length!=0){
+            tmpDatasets = this.headers.slice(1).map((header,index) => ({
                 label:header,
                 data:[],
                 borderColor: `hsl(${index * 60}, 100%, 50%)`,
                 fill: false
             }));
         }
-        graph.lastDatapointTimestamp =0;
-        graph.timestampOffset=0;
-        graph.drawNewChart(tmpDatasets,[],tmpScales);
+        this.lastDatapointTimestamp =0;
+        this.timestampOffset=0;
+        this.drawGraph(tmpDatasets,[],tmpScales);
     }
-
-    static drawSumChart(){
-        let labels = graph.graphHeaders;
-
-        if(graph.graphHeaders.length !=0){
-            if(graph.graphHeaders[0].startsWith("Time")){
-                labels = labels.slice(1);
-            }
+    updateHeadersImpl(){
+        let currentColumnCount = this.chart.data.datasets.length;
+        if(currentColumnCount==0){
+            this.chart.options.scales.x.title.text=this.headers[0];
         }
-        let dataToPlot = [{
-                label: "",
-                data: new Array(labels.length).fill(0),
-                backgroundColor: ["red", "blue", "green", "yellow", "purple", "orange"]
-            }];
 
-        graph.drawNewChart(dataToPlot,labels,{})
+        for(let i=currentColumnCount;i<this.headers.length-1;i++){
+            this.chart.data.datasets.push({
+                label:this.headers[i+1],
+                data:[],
+                borderColor: `hsl(${i * 60}, 100%, 50%)`,
+                fill: false
+            })
+
+        }
     }
+    updateChartData(newData){
+        if(!this.chart){
+            return;
+        }
 
-    static updateLineChart(newData){
         for(let row of newData){
-            if(graph.graphHeaders[0].startsWith("Time")){
-                if(row[0] < graph.lastDatapointTimestamp){
-                    graph.addDividorToLineChart(graph.lastDatapointTimestamp);
-                    graph.timestampOffset = graph.lastDatapointTimestamp-row[0]
+            if(this.headers[0].startsWith("Time")){
+                if(row[0] < this.lastDatapointTimestamp){
+                    this.addDividorToLineChart(this.lastDatapointTimestamp);
+                    this.timestampOffset = this.lastDatapointTimestamp-row[0]
                 }
-                graph.lastDatapointTimestamp = row[0];
-                row[0] = row[0]+graph.timestampOffset
+                this.lastDatapointTimestamp = row[0];
+                row[0] = row[0]+this.timestampOffset
             }
-            let maxI = Math.min(row.length,graph.graphHeaders.length);
+            let maxI = Math.min(row.length,this.headers.length);
             for(let i=1;i<maxI;i++){
-                graph.chart.data.datasets[i-1].data.push({y:row[i],x:""+row[0]});
+                this.chart.data.datasets[i-1].data.push({y:row[i],x:""+row[0]});
             }
         }
-        graph.chart.update();
+        this.drawnUpTo = this.drawnUpTo+newData.length;
+        this.chart.update();
     }
 
-    static updateSumChart(newData){
-        let rowOffset =0;
-        if(graph.graphHeaders[0].startsWith("Time")){
-            rowOffset = 1;
-        }
-        for(let row of newData){
-            let maxI = Math.min(row.length,graph.graphHeaders.length);
-            for(let i=rowOffset;i<maxI;i++){
-                let elem = row[i];
-                if(!isNaN(elem)){
-                    graph.chart.data.datasets[0].data[i-rowOffset]+=elem;
-                }
-            }
-        }
-    }
-
-    static addDividorToLineChart(xPosition){
-        if (!graph.chart.options.plugins.annotation) {
-            graph.chart.options.plugins.annotation = { annotations: [] };
+    addDividorToLineChart(xPosition){
+        if (!this.chart.options.plugins.annotation) {
+            this.chart.options.plugins.annotation = { annotations: [] };
         }
 
         // Add a new vertical line annotation with a hover tooltip
-        graph.chart.options.plugins.annotation={annotations:[{
+        this.chart.options.plugins.annotation={annotations:[{
             type: 'line',
             scaleID: 'x',
             mode: 'vertical',
@@ -246,22 +244,4 @@ class graph{
                 
         }]};
     }
-    static getDrawnTo(){
-        return graph.drawnUpToRow;
-    }
-    static updateChart(providedData){
-        if(!graph.chart){
-            return;
-        }
-
-        if(graph.graphType == "line"){
-            graph.updateLineChart(providedData);
-        }else if(graph.graphType == "pie" || graph.graphType == "bar"){
-            graph.updateSumChart(providedData);
-        }
-        graph.drawnUpToRow = graph.drawnUpToRow+providedData.length;
-        graph.chart.update(); 
-    }
 }
-
-

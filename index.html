@@ -39,18 +39,34 @@
     </div>
     
     <script>
-
         let port,reader,writer;
         let tmpHeaders = [];
         let storedHeaders = [];
         let storedData = [];
+        let graphType = "";
+        let graphTitle = "";
         let debugging = true;
         let lastRequestTime = 0;
         let connected = false;
         let updateLoop;
 
+        let graphInstance;
 
-        
+        function createChart(){
+            if(storedHeaders.length ==0 || graphType == ""){
+                return;
+            }
+            document.getElementById("dataChart").style.display="block";
+            if(graphInstance){
+                graphInstance.delete();
+            }
+            if(graphType == "line"){
+                graphInstance = new lineChart(graphTitle,storedHeaders,graphType)
+            }else if(graphType == "bar" || graphType == "pie"){
+                graphInstance = new sumChart(graphTitle,storedHeaders,graphType)
+            }
+        }
+
         function updateButtonState(isConnected) {
             const connectButton = document.getElementById("connect");
             if (isConnected) {
@@ -115,6 +131,37 @@
 
         }
 
+
+        function newTitle(title){
+            graphTitle = title;
+            if(graphInstance==null){
+                return;
+            }
+            graphInstance.updateTitle(title);
+
+        }
+
+        function newType(newType){
+            if(graphInstance==null){
+                graphType = newType;
+                createChart();
+                return;
+            }
+            if(graphType != newType){
+                graphType = newType;
+                createChart();
+                return;
+            }
+        }
+
+        function newHeaders(){
+            if(graphInstance==null){
+                createChart();
+                return;
+            }
+            graphInstance.updateHeaders(storedHeaders);
+        }
+
         function processHeader(headerString) {
             if(tmpHeaders.length < 3){
                 tmpHeaders.push(headerString);
@@ -129,7 +176,7 @@
                         tmpHeaders.shift();
                         return;
                     }
-                    graph.updateHeaders(storedHeaders);
+                    newHeaders();
                     return;
                 }
                 return;
@@ -144,7 +191,7 @@
                 for(let i=storedHeaders.length;i<splitHeaders.length;i++){
                     storedHeaders.push(splitHeaders[i]);
                 }
-                graph.updateHeaders(storedHeaders);
+                newHeaders();
             }
         }
 
@@ -158,11 +205,11 @@
                 return;
             }
             if (data.startsWith("T:") && data.endsWith(":T")) {
-                graph.updateTitle(data.slice(2,-2));
+                newTitle(data.slice(2,-2));
                 return;
             }
             if (data.startsWith("G:") && data.endsWith(":G")) {
-                graph.updateType(data.slice(2,-2));
+                newType(data.slice(2,-2));
                 return;
             }
             //cound be data, could be new header or could be malformed
@@ -174,16 +221,19 @@
         }
 
         function updateGraph(){
-            if(graph.getDrawnTo() == storedData.length){
+            if(!graphInstance){
+                return;
+            }
+            if(graphInstance.getDrawnTo() == storedData.length){
                 return;
             }
             let max = storedData.length;
-            let newData = storedData.slice(graph.getDrawnTo(),max);
+            let newData = storedData.slice(graphInstance.getDrawnTo(),max);
             if(newData[newData.length-1].length > storedHeaders.length){
                 requestGraphHeaders();
                 return;
             }
-            graph.updateChart(newData);
+            graphInstance.updateChartData(newData);
         }
 
         async function serialReader() {
